@@ -1,7 +1,7 @@
 # Cat-vs-Dog Image Classification Website
 🐱 vs 🐶 PawDetect — Cat vs Dog AI Classifier
 A beautiful, fully interactive Cat vs Dog image classifier that runs 100% in your browser using TensorFlow.js. No API key, no server, no cost — just drop a photo and get an instant AI verdict.
-🔗 Live Demo: https://your-username.github.io/cat-vs-dog
+🔗 Live Demo: https://github.com/Nithishabalu/Cat-vs-Dog-Image-Classification-Website-
 
 ✨ Features
 
