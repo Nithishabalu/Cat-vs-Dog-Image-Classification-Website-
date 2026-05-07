@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PawDetect — Cat vs Dog AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --cat:#F97316;--cat2:#FBBF24;--cat-glow:rgba(249,115,22,0.3);
+  --dog:#6366F1;--dog2:#A78BFA;--dog-glow:rgba(99,102,241,0.3);
+  --bg:#07070F;--surface:#11111C;--card:#181826;--card2:#1E1E30;
+  --border:#252538;--text:#F0F0FF;--muted:#7070A0;
+  --green:#22C55E;--red:#EF4444;
+  --radius:20px;
+}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;cursor:default}
+
+/* ── Canvas BG ── */
+#bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+/* ── Confetti canvas ── */
+#confetti-canvas{position:fixed;inset:0;z-index:100;pointer-events:none}
+
+/* ── Layout ── */
+.wrap{position:relative;z-index:1;max-width:920px;margin:0 auto;padding:0 20px 60px}
+
+/* ── Header ── */
+header{text-align:center;padding:64px 0 44px}
+.pill{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:100px;padding:8px 20px;margin-bottom:30px;font-size:12px;color:var(--muted);letter-spacing:.6px}
+.pill-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse-dot 2s ease-in-out infinite}
+@keyframes pulse-dot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.6}}
+h1{font-family:'Syne',sans-serif;font-size:clamp(52px,10vw,96px);font-weight:800;line-height:.9;letter-spacing:-4px;margin-bottom:18px}
+.t-cat{background:linear-gradient(135deg,#F97316,#FBBF24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.t-vs{font-size:.4em;color:var(--muted);letter-spacing:0;-webkit-text-fill-color:var(--muted)}
+.t-dog{background:linear-gradient(135deg,#6366F1,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:16px;color:var(--muted);max-width:420px;margin:0 auto;line-height:1.7;font-weight:300}
+
+/* ── Score tally ── */
+.tally{display:flex;justify-content:center;gap:0;margin:32px auto 0;width:fit-content;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--card)}
+.tally-box{padding:18px 36px;text-align:center;position:relative}
+.tally-box+.tally-box{border-left:1px solid var(--border)}
+.tally-num{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;line-height:1;transition:transform .3s}
+.tally-num.bump{animation:bump .35s cubic-bezier(.175,.885,.32,1.275)}
+@keyframes bump{0%,100%{transform:scale(1)}50%{transform:scale(1.4)}}
+.tally-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-top:4px}
+.tally-cat .tally-num{color:var(--cat)}
+.tally-dog .tally-num{color:var(--dog)}
+.tally-total .tally-num{color:var(--text)}
+
+/* ── Model banner ── */
+#model-banner{background:linear-gradient(90deg,rgba(99,102,241,.1),rgba(249,115,22,.1));border:1px solid var(--border);border-radius:14px;padding:14px 20px;margin:32px 0 24px;display:flex;align-items:center;gap:12px;font-size:14px;color:var(--muted);transition:all .4s}
+#model-banner.ready{border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.06);color:#4ADE80}
+.spin{display:inline-block;animation:spin 1s linear infinite;font-size:18px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Upload zone ── */
+.upload-zone{
+  border:2px dashed var(--border);border-radius:var(--radius);
+  padding:60px 32px;text-align:center;cursor:pointer;
+  transition:all .3s;position:relative;overflow:hidden;
+  background:var(--surface);margin-bottom:24px;
+}
+.upload-zone::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 100%,rgba(99,102,241,.1),transparent 60%);opacity:0;transition:opacity .4s}
+.upload-zone:hover{border-color:var(--dog);transform:translateY(-4px);box-shadow:0 30px 80px rgba(99,102,241,.15)}
+.upload-zone:hover::after{opacity:1}
+.upload-zone.drag-over{border-color:var(--cat);border-style:solid;transform:scale(1.015);box-shadow:0 0 0 8px rgba(249,115,22,.08)}
+.upload-zone>*{position:relative;z-index:1}
+
+.upload-icon{font-size:76px;display:block;margin-bottom:16px;animation:icon-float 3s ease-in-out infinite;filter:drop-shadow(0 0 24px rgba(249,115,22,.5))}
+@keyframes icon-float{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-12px) rotate(3deg)}}
+.upload-title{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;margin-bottom:8px}
+.upload-sub{color:var(--muted);font-size:14px;margin-bottom:28px}
+.btn-pick{display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--dog),var(--dog2));color:#fff;border:none;border-radius:100px;padding:15px 32px;font-size:15px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .25s;box-shadow:0 8px 32px var(--dog-glow);letter-spacing:.2px}
+.btn-pick:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 16px 40px var(--dog-glow)}
+.btn-pick:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.fmts{display:flex;justify-content:center;gap:8px;margin-top:20px;flex-wrap:wrap}
+.fmt{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;padding:4px 11px;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.8px}
+input[type=file]{display:none}
+
+/* ── Progress ring ── */
+.ring-wrap{display:flex;justify-content:center;margin:8px 0 24px}
+.ring-svg{transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:rgba(255,255,255,.06);stroke-width:10}
+.ring-cat{fill:none;stroke:url(#ringCat);stroke-width:10;stroke-linecap:round;stroke-dasharray:565;stroke-dashoffset:565;transition:stroke-dashoffset 1.2s cubic-bezier(.25,.46,.45,.94)}
+.ring-dog{fill:none;stroke:url(#ringDog);stroke-width:10;stroke-linecap:round;stroke-dasharray:565;stroke-dashoffset:565;transition:stroke-dashoffset 1.2s cubic-bezier(.25,.46,.45,.94) .1s}
+.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring-emoji{font-size:52px;animation:pop .5s cubic-bezier(.175,.885,.32,1.275) both}
+.ring-label{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-top:4px}
+.ring-label.cat{background:linear-gradient(135deg,#F97316,#FBBF24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ring-label.dog{background:linear-gradient(135deg,#6366F1,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+@keyframes pop{0%{transform:scale(0) rotate(-20deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+.ring-outer{position:relative;width:200px;height:200px}
+
+/* ── Result section ── */
+#result-section{display:none;margin-bottom:40px}
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:600px){.result-grid{grid-template-columns:1fr}}
+
+/* Preview card */
+.preview-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.card-head{padding:13px 18px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:var(--muted);display:flex;align-items:center;gap:8px}
+
+.img-wrap{position:relative;overflow:hidden;height:280px}
+#preview-img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s ease;cursor:zoom-in}
+#preview-img:hover{transform:scale(1.06)}
+.img-overlay{position:absolute;bottom:0;left:0;right:0;padding:12px 16px;background:linear-gradient(to top,rgba(0,0,0,.7),transparent);font-size:12px;color:rgba(255,255,255,.7);opacity:0;transition:opacity .3s}
+.img-wrap:hover .img-overlay{opacity:1}
+
+/* Verdict card */
+.verdict-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden}
+.vbody{padding:22px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+
+.loading-inner{text-align:center;padding:32px 0}
+.paw-row{display:flex;justify-content:center;gap:12px;margin-bottom:16px}
+.paw{font-size:28px;animation:paw-hop .85s ease-in-out infinite}
+.paw:nth-child(2){animation-delay:.14s}
+.paw:nth-child(3){animation-delay:.28s}
+@keyframes paw-hop{0%,100%{transform:translateY(0) scale(.9);opacity:.3}50%{transform:translateY(-16px) scale(1.1);opacity:1}}
+.load-txt{color:var(--muted);font-size:13px}
+
+.reveal{display:none;width:100%;text-align:center}
+.conf-bars{width:100%;margin-top:16px;text-align:left}
+.cb-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:5px}
+.cb-label{color:var(--muted);display:flex;align-items:center;gap:5px}
+.cb-pct{font-weight:700;font-family:'Syne',sans-serif;font-size:14px}
+.bar-track{height:8px;background:rgba(255,255,255,.07);border-radius:100px;overflow:hidden;margin-bottom:14px;position:relative}
+.bar-fill{height:100%;border-radius:100px;width:0;transition:width 1.2s cubic-bezier(.25,.46,.45,.94)}
+.bar-fill.cat{background:linear-gradient(90deg,#F97316,#FBBF24)}
+.bar-fill.dog{background:linear-gradient(90deg,#6366F1,#A78BFA)}
+.bar-glow{position:absolute;top:0;right:0;height:100%;width:40px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.25));border-radius:100px;animation:bar-shine 2s ease-in-out infinite;opacity:0}
+.bar-track:has(.bar-fill[style*="width"]) .bar-glow{opacity:1}
+
+.top-label{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-top:4px;font-size:13px;color:var(--muted);line-height:1.7;width:100%;text-align:left}
+.top-label strong{color:var(--text);font-size:11px;text-transform:uppercase;letter-spacing:1.2px;display:block;margin-bottom:4px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tag{background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:100px;padding:3px 12px;font-size:11px;color:var(--muted)}
+
+.btn-retry{display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid var(--border);border-radius:100px;padding:11px;font-size:14px;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;margin-top:16px;width:100%}
+.btn-retry:hover{border-color:var(--text);color:var(--text);background:rgba(255,255,255,.04)}
+
+/* ── Fun fact ticker ── */
+.fact-ticker{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;gap:12px;font-size:13px;overflow:hidden;position:relative}
+.fact-icon{font-size:22px;flex-shrink:0}
+.fact-text{color:var(--muted);line-height:1.5;flex:1}
+.fact-text span{color:var(--text);font-weight:500}
+.fact-nav{display:flex;gap:6px;flex-shrink:0}
+.fact-btn{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;width:28px;height:28px;cursor:pointer;color:var(--muted);font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.fact-btn:hover{background:rgba(255,255,255,.1);color:var(--text)}
+
+/* ── History ── */
+.history-section{margin-bottom:48px}
+.sec-head{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:2px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.sec-head::after{content:'';flex:1;height:1px;background:var(--border)}
+.history-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+.hist-item{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;transition:all .2s;position:relative}
+.hist-item:hover{transform:translateY(-3px);border-color:var(--border);box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.hist-img{width:100%;height:90px;object-fit:cover;display:block}
+.hist-badge{position:absolute;top:8px;right:8px;border-radius:100px;padding:2px 8px;font-size:10px;font-weight:700}
+.hist-badge.cat{background:rgba(249,115,22,.9);color:#fff}
+.hist-badge.dog{background:rgba(99,102,241,.9);color:#fff}
+.hist-badge.other{background:rgba(100,100,120,.9);color:#fff}
+.hist-info{padding:8px 10px;font-size:11px;color:var(--muted)}
+.hist-info strong{color:var(--text);display:block;font-weight:600}
+.hist-empty{color:var(--muted);font-size:14px;padding:20px 0;text-align:center;width:100%}
+
+/* ── Stats bar ── */
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;text-align:center}
+.stat-val{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;line-height:1}
+.stat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:5px}
+
+/* ── How it works ── */
+.how-section{margin-bottom:52px}
+.how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:580px){.how-grid{grid-template-columns:1fr}}
+.how-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:border-color .25s,transform .25s}
+.how-card:hover{border-color:rgba(99,102,241,.4);transform:translateY(-3px)}
+.how-num{font-family:'Syne',sans-serif;font-size:44px;font-weight:800;line-height:1;margin-bottom:14px;opacity:.12}
+.how-title{font-weight:700;margin-bottom:6px;font-size:15px}
+.how-desc{font-size:13px;color:var(--muted);line-height:1.65}
+
+/* ── Error ── */
+.err-box{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:14px 18px;color:#FCA5A5;font-size:14px;display:none;margin-bottom:20px}
+
+/* ── Footer ── */
+footer{text-align:center;padding:24px 0 40px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)}
+footer a{color:var(--dog);text-decoration:none}
+footer a:hover{text-decoration:underline}
+
+/* ── Tooltip ── */
+.tooltip{position:fixed;background:rgba(20,20,35,.95);border:1px solid var(--border);border-radius:10px;padding:8px 14px;font-size:12px;color:var(--text);pointer-events:none;z-index:200;opacity:0;transform:translateY(4px);transition:all .2s;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<canvas id="confetti-canvas"></canvas>
+<div class="tooltip" id="tooltip"></div>
+
+<div class="wrap">
+
+  <!-- Header -->
+  <header>
+
+    <h1>
+      <span class="t-cat">Cat</span><br>
+      <span class="t-vs">vs</span><br>
+      <span class="t-dog">Dog</span>
+    </h1>
+    <p class="subtitle">Upload any pet photo. Our on-device AI instantly detects whether it's a cat or dog — private, fast, free.</p>
+    <div class="tally">
+      <div class="tally-box tally-cat"><div class="tally-num" id="t-cat">0</div><div class="tally-lbl">🐱 Cats</div></div>
+      <div class="tally-box tally-dog"><div class="tally-num" id="t-dog">0</div><div class="tally-lbl">🐶 Dogs</div></div>
+      <div class="tally-box tally-total"><div class="tally-num" id="t-total">0</div><div class="tally-lbl">Total</div></div>
+    </div>
+  </header>
+
+  <!-- Model banner -->
+  <div id="model-banner">
+    <span class="spin">⚙️</span>
+    <span id="banner-txt">Loading AI model — takes 5–10 seconds on first visit…</span>
+  </div>
+
+  <!-- Fun fact ticker -->
+  <div class="fact-ticker">
+    <span class="fact-icon" id="fact-icon">💡</span>
+    <div class="fact-text" id="fact-text">Loading fun fact…</div>
+    <div class="fact-nav">
+      <button class="fact-btn" onclick="prevFact()">‹</button>
+      <button class="fact-btn" onclick="nextFact()">›</button>
+    </div>
+  </div>
+
+  <!-- Upload zone -->
+  <div class="upload-zone" id="upload-zone">
+    <span class="upload-icon" id="upload-icon">📸</span>
+    <div class="upload-title">Drop your pet photo here</div>
+    <div class="upload-sub">Drag & drop, or click to browse from your device</div>
+    <button class="btn-pick" id="pick-btn" onclick="document.getElementById('file-input').click()" disabled>⏳ Loading AI…</button>
+    <div class="fmts"><span class="fmt">JPG</span><span class="fmt">PNG</span><span class="fmt">WEBP</span><span class="fmt">GIF</span></div>
+    <input type="file" id="file-input" accept="image/*"/>
+  </div>
+
+  <div class="err-box" id="err-box"></div>
+
+  <!-- Result section -->
+  <div id="result-section">
+    <div class="result-grid">
+
+      <!-- Preview -->
+      <div class="preview-card">
+        <div class="card-head">📷 Your Photo</div>
+        <div class="img-wrap">
+          <img id="preview-img" src="" alt="Uploaded pet" crossorigin="anonymous"/>
+          <div class="img-overlay">Hover to zoom · Click to enlarge</div>
+        </div>
+      </div>
+
+      <!-- Verdict -->
+      <div class="verdict-card">
+        <div class="card-head">🤖 AI Verdict</div>
+        <div class="vbody">
+
+          <!-- Loading -->
+          <div class="loading-inner" id="loading-inner">
+            <div class="paw-row"><span class="paw">🐾</span><span class="paw">🐾</span><span class="paw">🐾</span></div>
+            <div class="load-txt" id="load-txt">Sniffing the pixels…</div>
+          </div>
+
+          <!-- Result -->
+          <div class="reveal" id="reveal">
+            <div class="ring-wrap">
+              <div class="ring-outer">
+                <svg class="ring-svg" width="200" height="200" viewBox="0 0 200 200">
+                  <defs>
+                    <linearGradient id="ringCat" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#F97316"/>
+                      <stop offset="100%" stop-color="#FBBF24"/>
+                    </linearGradient>
+                    <linearGradient id="ringDog" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#6366F1"/>
+                      <stop offset="100%" stop-color="#A78BFA"/>
+                    </linearGradient>
+                  </defs>
+                  <circle class="ring-bg" cx="100" cy="100" r="90"/>
+                  <circle class="ring-cat" id="ring-cat" cx="100" cy="100" r="90"/>
+                  <circle class="ring-dog" id="ring-dog" cx="100" cy="100" r="90" opacity=".5"/>
+                </svg>
+                <div class="ring-center">
+                  <span class="ring-emoji" id="ring-emoji">🐱</span>
+                  <div class="ring-label" id="ring-label">CAT!</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="conf-bars">
+              <div class="cb-row">
+                <span class="cb-label">🐱 Cat</span>
+                <span class="cb-pct" id="cat-pct" style="color:var(--cat)">0%</span>
+              </div>
+              <div class="bar-track"><div class="bar-fill cat" id="cat-bar"></div><div class="bar-glow"></div></div>
+              <div class="cb-row">
+                <span class="cb-label">🐶 Dog</span>
+                <span class="cb-pct" id="dog-pct" style="color:var(--dog)">0%</span>
+              </div>
+              <div class="bar-track"><div class="bar-fill dog" id="dog-bar"></div><div class="bar-glow"></div></div>
+            </div>
+
+            <div class="top-label">
+              <strong>Top Detection</strong>
+              <span id="top-label-txt">—</span>
+              <div class="tags" id="tags-row"></div>
+            </div>
+
+            <button class="btn-retry" onclick="resetApp()">🔄 Classify Another Photo</button>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Session stats -->
+  <div class="stats-row" id="stats-row" style="display:none">
+    <div class="stat-card">
+      <div class="stat-val" id="s-total" style="color:var(--text)">0</div>
+      <div class="stat-lbl">Photos Classified</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="s-cat" style="color:var(--cat)">0%</div>
+      <div class="stat-lbl">Cat Rate</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="s-dog" style="color:var(--dog)">0%</div>
+      <div class="stat-lbl">Dog Rate</div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="history-section" id="history-section" style="display:none">
+    <div class="sec-head">Classification History</div>
+    <div class="history-grid" id="history-grid"></div>
+  </div>
+
+  <!-- How it works -->
+  <div class="how-section">
+    <div class="sec-head">How it works</div>
+    <div class="how-grid">
+      <div class="how-card">
+        <div class="how-num">01</div>
+        <div class="how-title">Upload Any Photo</div>
+        <div class="how-desc">Drag & drop or click to browse. Works with JPG, PNG, WEBP, or GIF pet images from your device.</div>
+      </div>
+      <div class="how-card">
+        <div class="how-num">02</div>
+        <div class="how-title">Local AI Processing</div>
+        <div class="how-desc">TensorFlow.js runs MobileNet entirely in your browser. No server calls — your photos stay on your device.</div>
+      </div>
+      <div class="how-card">
+        <div class="how-num">03</div>
+        <div class="how-title">Instant Results</div>
+        <div class="how-desc">Get a Cat vs Dog verdict with confidence ring, probability bars, breed labels and session history.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Powered by <a href="https://www.tensorflow.org/js" target="_blank">TensorFlow.js</a> + MobileNet &nbsp;·&nbsp;
+    <a href="https://github.com/tensorflow/tfjs-models/tree/master/mobilenet" target="_blank">Open Source Model</a> &nbsp;·&nbsp;
+    Your photos never leave your device 🔒
+  </footer>
+
+</div>
+
+<script>
+/* ════════════════════════════════
+   PARTICLE BACKGROUND
+════════════════════════════════ */
+(function(){
+  const c=document.getElementById('bg-canvas');
+  const ctx=c.getContext('2d');
+  let W,H,pts=[];
+  function resize(){W=c.width=window.innerWidth;H=c.height=window.innerHeight}
+  resize();window.addEventListener('resize',()=>{resize();init()});
+  function init(){
+    pts=[];
+    for(let i=0;i<80;i++)pts.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.5+.5,dx:(Math.random()-.5)*.3,dy:(Math.random()-.5)*.3,o:Math.random()*.5+.1});
+  }
+  init();
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    pts.forEach(p=>{
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(180,180,255,${p.o})`;ctx.fill();
+      p.x+=p.dx;p.y+=p.dy;
+      if(p.x<0||p.x>W)p.dx*=-1;
+      if(p.y<0||p.y>H)p.dy*=-1;
+    });
+    // Draw faint connections
+    for(let i=0;i<pts.length;i++){
+      for(let j=i+1;j<pts.length;j++){
+        const d=Math.hypot(pts[i].x-pts[j].x,pts[i].y-pts[j].y);
+        if(d<100){
+          ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);
+          ctx.strokeStyle=`rgba(100,100,255,${.08*(1-d/100)})`;ctx.lineWidth=.5;ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+/* ════════════════════════════════
+   CONFETTI
+════════════════════════════════ */
+(function(){
+  const c=document.getElementById('confetti-canvas');
+  const ctx=c.getContext('2d');
+  c.width=window.innerWidth;c.height=window.innerHeight;
+  window.addEventListener('resize',()=>{c.width=window.innerWidth;c.height=window.innerHeight});
+  let pieces=[];
+  const COLORS=['#F97316','#FBBF24','#6366F1','#A78BFA','#22C55E','#EC4899','#F1F1FF'];
+  window.launchConfetti=function(){
+    for(let i=0;i<120;i++){
+      pieces.push({
+        x:Math.random()*c.width,y:-20,
+        w:8+Math.random()*8,h:4+Math.random()*4,
+        rot:Math.random()*360,drot:(Math.random()-0.5)*8,
+        dx:(Math.random()-0.5)*6,dy:3+Math.random()*5,
+        color:COLORS[Math.floor(Math.random()*COLORS.length)],
+        life:1
+      });
+    }
+  };
+  function loop(){
+    ctx.clearRect(0,0,c.width,c.height);
+    pieces=pieces.filter(p=>p.life>0);
+    pieces.forEach(p=>{
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot*Math.PI/180);
+      ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+      ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);ctx.restore();
+      p.x+=p.dx;p.y+=p.dy;p.rot+=p.drot;p.dy+=.12;p.life-=.012;
+    });
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+
+/* ════════════════════════════════
+   FUN FACTS
+════════════════════════════════ */
+const FACTS=[
+  {icon:'🐱',text:'Cats spend <span>70% of their lives sleeping</span> — about 13–16 hours a day!'},
+  {icon:'🐶',text:'Dogs have <span>300 million smell receptors</span> vs 6 million in humans.'},
+  {icon:'🐱',text:'A group of cats is called <span>a clowder</span>. A group of kittens is a <span>kindle</span>.'},
+  {icon:'🐶',text:'Dogs can learn over <span>1,000 different words</span> and commands.'},
+  {icon:'🐱',text:'Cats have <span>32 ear muscles</span> and can rotate their ears 180 degrees.'},
+  {icon:'🐶',text:'The Basenji is the only dog that <span>does not bark</span> — it yodels!'},
+  {icon:'🐱',text:'Cats can jump <span>6 times their body length</span> in a single leap.'},
+  {icon:'🐶',text:'A dog\'s nose print is as unique as <span>a human fingerprint</span>.'},
+  {icon:'🐱',text:'Cats are the <span>most popular pet</span> in the world by population count.'},
+  {icon:'🐶',text:'Dogs dream like humans — they enter <span>REM sleep</span> and twitch while dreaming.'},
+];
+let factIdx=0;
+function showFact(i){
+  factIdx=(i+FACTS.length)%FACTS.length;
+  const f=FACTS[factIdx];
+  document.getElementById('fact-icon').textContent=f.icon;
+  document.getElementById('fact-text').innerHTML=f.text;
+}
+function nextFact(){showFact(factIdx+1)}
+function prevFact(){showFact(factIdx-1)}
+showFact(0);
+setInterval(nextFact,6000);
+
+/* ════════════════════════════════
+   TALLY / SESSION STATE
+════════════════════════════════ */
+let catCount=0,dogCount=0,totalCount=0;
+const history=[];
+
+function bumpTally(verdict){
+  if(verdict==='cat')catCount++;
+  else if(verdict==='dog')dogCount++;
+  totalCount++;
+  const tc=document.getElementById('t-cat');
+  const td=document.getElementById('t-dog');
+  const tt=document.getElementById('t-total');
+  [tc,td,tt].forEach(el=>{el.classList.remove('bump');void el.offsetWidth;el.classList.add('bump')});
+  tc.textContent=catCount;td.textContent=dogCount;tt.textContent=totalCount;
+  // stats
+  document.getElementById('stats-row').style.display='grid';
+  document.getElementById('s-total').textContent=totalCount;
+  document.getElementById('s-cat').textContent=Math.round((catCount/totalCount)*100)+'%';
+  document.getElementById('s-dog').textContent=Math.round((dogCount/totalCount)*100)+'%';
+}
+
+/* ════════════════════════════════
+   HISTORY
+════════════════════════════════ */
+function addHistory(src,verdict,pct){
+  history.unshift({src,verdict,pct});
+  if(history.length>12)history.pop();
+  renderHistory();
+}
+function renderHistory(){
+  const sec=document.getElementById('history-section');
+  const grid=document.getElementById('history-grid');
+  if(history.length===0){sec.style.display='none';return;}
+  sec.style.display='block';
+  grid.innerHTML='';
+  history.forEach(h=>{
+    const d=document.createElement('div');d.className='hist-item';
+    d.innerHTML=`<img src="${h.src}" class="hist-img" alt="${h.verdict}"/>
+      <div class="hist-badge ${h.verdict}">${h.verdict==='cat'?'🐱 Cat':h.verdict==='dog'?'🐶 Dog':'🤔 ?'}</div>
+      <div class="hist-info"><strong>${h.pct}% sure</strong>${h.verdict}</div>`;
+    d.addEventListener('click',()=>reclassify(h.src));
+    grid.appendChild(d);
+  });
+}
+function reclassify(src){startClassification(src)}
+
+/* ════════════════════════════════
+   AI MODEL
+════════════════════════════════ */
+let model=null;
+const LOADING_MSGS=['Sniffing the pixels…','Consulting the whisker oracle…','Counting paws…','Detecting fluffiness level…','Analyzing ear shape…'];
+
+async function loadModel(){
+  try{
+    model=await mobilenet.load({version:2,alpha:1.0});
+    const b=document.getElementById('model-banner');
+    b.classList.add('ready');
+    document.getElementById('banner-txt').textContent='✅ AI Model ready — drop a photo to classify!';
+    const btn=document.getElementById('pick-btn');
+    btn.disabled=false;btn.innerHTML='📁 Choose Photo';
+    document.getElementById('upload-icon').textContent='📸';
+  }catch(e){
+    document.getElementById('banner-txt').textContent='❌ Model failed to load. Check internet and refresh.';
+  }
+}
+loadModel();
+
+/* ── Drag & drop ── */
+const zone=document.getElementById('upload-zone');
+zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag-over')});
+zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+zone.addEventListener('drop',e=>{
+  e.preventDefault();zone.classList.remove('drag-over');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type.startsWith('image/'))processFile(f);
+});
+zone.addEventListener('click',e=>{
+  if(!model)return;
+  const t=e.target;
+  if(t===zone||t.classList.contains('upload-icon')||t.classList.contains('upload-title')||t.classList.contains('upload-sub'))
+    document.getElementById('file-input').click();
+});
+document.getElementById('file-input').addEventListener('change',e=>{
+  if(e.target.files[0])processFile(e.target.files[0]);
+});
+
+function processFile(f){
+  const reader=new FileReader();
+  reader.onload=ev=>startClassification(ev.target.result);
+  reader.readAsDataURL(f);
+}
+
+function startClassification(src){
+  document.getElementById('err-box').style.display='none';
+  document.getElementById('preview-img').src=src;
+  document.getElementById('result-section').style.display='block';
+  document.getElementById('loading-inner').style.display='flex';
+  document.getElementById('loading-inner').style.flexDirection='column';
+  document.getElementById('loading-inner').style.alignItems='center';
+  document.getElementById('reveal').style.display='none';
+  document.getElementById('cat-bar').style.width='0';
+  document.getElementById('dog-bar').style.width='0';
+  document.getElementById('ring-cat').style.strokeDashoffset='565';
+  document.getElementById('ring-dog').style.strokeDashoffset='565';
+
+  // Cycle loading messages
+  let mi=0;
+  const lt=document.getElementById('load-txt');
+  lt.textContent=LOADING_MSGS[0];
+  const msgInt=setInterval(()=>{mi=(mi+1)%LOADING_MSGS.length;lt.textContent=LOADING_MSGS[mi]},900);
+
+  document.getElementById('result-section').scrollIntoView({behavior:'smooth',block:'start'});
+
+  const img=document.getElementById('preview-img');
+  const run=()=>{clearInterval(msgInt);runModel(img,src)};
+  img.onload=run;
+  img.onerror=()=>{clearInterval(msgInt);showErr('Could not load image. Try uploading from your device.')};
+  if(img.complete&&img.naturalWidth>0)run();
+}
+
+/* ── Word lists ── */
+const CAT_WORDS=['cat','tabby','kitten','kitty','tiger cat','persian','siamese','burmese','abyssinian','egyptian','cougar','lynx','leopard','jaguar','cheetah'];
+const DOG_WORDS=['dog','puppy','pup','labrador','retriever','poodle','bulldog','beagle','husky','shepherd','terrier','spaniel','chihuahua','dachshund','corgi','dalmatian','boxer','rottweiler','doberman','collie','schnauzer','maltese','pomeranian','shih','bichon','malamute','samoyed','akita','chow','weimaraner','vizsla'];
+function scoreLabel(l){
+  const lc=l.toLowerCase();
+  let cat=0,dog=0;
+  CAT_WORDS.forEach(w=>{if(lc.includes(w))cat++});
+  DOG_WORDS.forEach(w=>{if(lc.includes(w))dog++});
+  return{cat,dog};
+}
+
+async function runModel(imgEl,src){
+  try{
+    const preds=await model.classify(imgEl,5);
+    let catScore=0,dogScore=0;
+    preds.forEach(p=>{const s=scoreLabel(p.className);catScore+=s.cat*p.probability;dogScore+=s.dog*p.probability;});
+    const topLabel=preds[0].className.split(',')[0].trim();
+    const allTags=preds.slice(0,3).map(p=>p.className.split(',')[0].trim());
+    const total=catScore+dogScore;
+    let catPct,dogPct,verdict;
+    if(total===0){catPct=50;dogPct=50;verdict='other';}
+    else{catPct=Math.round((catScore/total)*100);dogPct=100-catPct;verdict=catPct>=dogPct?'cat':'dog';}
+    showResult({catPct,dogPct,verdict,topLabel,allTags,src});
+  }catch(e){showErr('Classification error: '+e.message);}
+}
+
+function showResult({catPct,dogPct,verdict,topLabel,allTags,src}){
+  document.getElementById('loading-inner').style.display='none';
+  document.getElementById('reveal').style.display='block';
+
+  const emojiEl=document.getElementById('ring-emoji');
+  const labelEl=document.getElementById('ring-label');
+  if(verdict==='cat'){emojiEl.textContent='🐱';labelEl.textContent='CAT!';labelEl.className='ring-label cat';}
+  else if(verdict==='dog'){emojiEl.textContent='🐶';labelEl.textContent='DOG!';labelEl.className='ring-label dog';}
+  else{emojiEl.textContent='🤔';labelEl.textContent='Unclear';labelEl.className='ring-label';}
+
+  document.getElementById('cat-pct').textContent=catPct+'%';
+  document.getElementById('dog-pct').textContent=dogPct+'%';
+
+  // Circumference = 2π×90 ≈ 565
+  const CIRC=565;
+  setTimeout(()=>{
+    document.getElementById('cat-bar').style.width=catPct+'%';
+    document.getElementById('dog-bar').style.width=dogPct+'%';
+    document.getElementById('ring-cat').style.strokeDashoffset=CIRC-(CIRC*(catPct/100));
+    document.getElementById('ring-dog').style.strokeDashoffset=CIRC-(CIRC*(dogPct/100));
+  },80);
+
+  document.getElementById('top-label-txt').textContent=topLabel;
+  const tagsRow=document.getElementById('tags-row');
+  tagsRow.innerHTML='';
+  allTags.forEach(t=>{const s=document.createElement('span');s.className='tag';s.textContent=t;tagsRow.appendChild(s);});
+
+  // Confetti for high confidence
+  const topPct=Math.max(catPct,dogPct);
+  if(topPct>=75)launchConfetti();
+
+  bumpTally(verdict);
+  addHistory(src,verdict,topPct);
+}
+
+function showErr(msg){
+  document.getElementById('loading-inner').style.display='none';
+  const e=document.getElementById('err-box');e.style.display='block';e.textContent='❌ '+msg;
+}
+
+function resetApp(){
+  document.getElementById('result-section').style.display='none';
+  document.getElementById('file-input').value='';
+  document.getElementById('err-box').style.display='none';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* ── Image click to enlarge ── */
+document.getElementById('preview-img').addEventListener('click',function(){
+  const w=window.open();
+  w.document.write(`<img src="${this.src}" style="max-width:100%;max-height:100vh;display:block;margin:auto;background:#000"/>`);
+});
+</script>
+</body>
+</html>
