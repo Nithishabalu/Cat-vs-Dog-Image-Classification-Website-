@@ -45,7 +45,7 @@ All processing happens locally — your photos are never sent anywhere
 
 🖥️ Run Locally
 No installation needed. Just open the file in any browser:
-bashgit clone https://github.com/your-username/cat-vs-dog.git
+bashgit clone https://github.com/Nithishabalu/Cat-vs-Dog-Image-Classification-Website-
 cd cat-vs-dog
 open index.html
 Or simply double-click index.html to open it in your browser.
